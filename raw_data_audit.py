@@ -968,6 +968,7 @@ def write_docx_report(results: list[FileAuditResult], simulations: list[Simulati
     run = title.add_run("UniCure Raw Data Audit Report")
     run.bold = True
     run.font.size = Pt(16)
+    doc.add_paragraph("This report was generated using software from https://github.com/ZexiChen502/Scientific-Raw-Data-Audit.")
     doc.add_paragraph(f"Generated at: {datetime.now().isoformat(timespec='seconds')}")
     doc.add_paragraph(f"Audited directory: {config.raw_dir}")
     doc.add_paragraph("This report is a statistical screening summary. Findings are integrity review indicators requiring contextual interpretation, not proof of misconduct.")
