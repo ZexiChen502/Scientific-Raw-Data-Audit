@@ -1,0 +1,8 @@
+pandas
+numpy
+scipy
+python-docx
+openpyxl
+pyreadr
+anndata
+h5py
