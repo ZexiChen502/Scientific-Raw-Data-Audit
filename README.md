@@ -202,12 +202,6 @@ python raw_data_check_soft/raw_data_audit.py \
   --formats csv,rdata,xlsx
 ```
 
-## Graphical interface
-
-A separate graphical interface can be built on top of the same audit engine, but the public GitHub version in this folder only documents and distributes the command-line tool.
-
-The core function `run_audit()` and progress callback support in `raw_data_audit.py` can be reused by private GUI wrappers or downstream applications.
-
 ## Demonstration data
 
 The folder `simulation_data/` contains small synthetic datasets used to demonstrate expected behavior and verify the audit logic.
@@ -363,29 +357,3 @@ python raw_data_check_soft/raw_data_audit.py \
 - Very large matrix formats may be audited in metadata-only or sampled form.
 - Optional file formats require optional dependencies.
 - Report interpretation should involve domain knowledge and inspection of the original experimental design.
-
-## Suggested GitHub contents
-
-Recommended files to upload:
-
-```text
-raw_data_check_soft/raw_data_audit.py
-raw_data_check_soft/README.md
-raw_data_check_soft/requirements.txt
-raw_data_check_soft/simulation_data/
-```
-
-Recommended files to exclude:
-
-```text
-raw_data_check_soft/raw_data_audit_gui.py
-raw_data_check_soft/build/
-raw_data_check_soft/dist/
-raw_data_check_soft/__pycache__/
-raw_data_check_soft/*.exe
-raw_data_check_soft/*.spec
-raw_data_check_soft/build_raw_data_audit_exe.ps1
-raw_data_check_soft/raw_data_audit_report.*
-raw_data_check_soft/raw_data_audit_simulation_report.*
-raw_data_check_soft/~$*.docx
-```
