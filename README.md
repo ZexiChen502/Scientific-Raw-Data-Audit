@@ -92,7 +92,8 @@ Benford deviations alone are treated as weak evidence and normally produce yello
 
 Column names are used to apply basic domain-aware bounds:
 
-- p-values, adjusted p-values, q-values, and FDR values should be in `[0, 1]`;
+- raw p-values, adjusted p-values, q-values, and FDR values should be in `[0, 1]`;
+- transformed p-value columns such as `-logP`, `logP`, `log10Pvalue`, `negLogP`, `minus_log_p`, and `negative_log_padj` are recognized as transformed statistics and are not checked as raw `[0, 1]` p-values;
 - correlations should be in `[-1, 1]`;
 - probabilities and AUC values should be in `[0, 1]`;
 - count-like columns should not contain negative values;

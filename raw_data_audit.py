@@ -60,10 +60,17 @@ SUPPORTED_FORMATS = {
 ROLE_PATTERNS = {
     "identifier": re.compile(r"(^|[_-])(id|sample|patient|cell|gene|drug|compound|barcode|name|type|group|label)([_-]|$)|(^|[_-])(mouse|animal)([_-]?(id|name|group|type)|$)", re.I),
     "coordinate": re.compile(r"(^|_)x$|(^|_)y$|tsne|t-sne|umap|\bpc\b|pca|dim|coordinate|coord", re.I),
-    "time_dose_rank": re.compile(r"time|day|week|hour|dose|concentration|conc|epoch|step|iteration|rank|order|index", re.I),
-    "statistical": re.compile(r"pvalue|p_value|p-value|padj|fdr|qvalue|q_value|logfc|auc|pearson|spearman|correlation|corr|r2|loss|score|metric", re.I),
+    "time_dose_rank": re.compile(r"time|day|week|hour|dose|concentration|conc|epoch|step|iteration|rank|order|index|^unnamed(?::\s*\d+)?$|^\d+$", re.I),
+    "statistical": re.compile(r"pvalue|p_value|p-value|p[._-]?val|p[._-]?adj|padj|fdr|qvalue|q_value|q[._-]?val|logfc|auc|pearson|spearman|correlation|corr|r2|loss|score|metric", re.I),
     "count": re.compile(r"count|reads|umi|n_cells|num|number|total", re.I),
 }
+
+RAW_PVALUE_NAME_RE = re.compile(r"(^|[_\-.\s])(p|pvalue|pval|p_value|p-value|p\.value|p_val|padj|p_adj|p-adj|p\.adj|fdr|qvalue|q_value|q-value|qval|q_val)([_\-.\s]|$)", re.I)
+TRANSFORMED_PVALUE_NAME_RE = re.compile(
+    r"(-|−|minus|neg|negative)?\s*log(?:10|2|e)?\s*[_\-.\s]*p(?:value|val|adj)?|"
+    r"(p(?:value|val|adj)?|padj|qvalue|qval|fdr)\s*[_\-.\s]*(-|−|minus|neg|negative)?\s*log(?:10|2|e)?",
+    re.I,
+)
 
 NA_STRINGS = {"", "na", "nan", "none", "null", "missing", "n/a", "NA", "NaN", "NULL"}
 
@@ -656,13 +663,20 @@ def check_benford(df: pd.DataFrame, roles: dict[str, list[str]], findings: list[
             add_finding(findings, "Benford first-digit deviation", "benford", "yellow", "low", 12, f"Column {col} deviates from Benford first-digit expectation.", {"column": col, "p_value": float(p), "n": len(first_digits)}, ["Benford tests are only appropriate for certain unbounded, multi-scale measurements and are weak evidence alone."], col)
 
 
+def is_raw_pvalue_column(name: str) -> bool:
+    normalized = str(name).strip().lower()
+    if TRANSFORMED_PVALUE_NAME_RE.search(normalized):
+        return False
+    return bool(RAW_PVALUE_NAME_RE.search(normalized))
+
+
 def check_scientific_bounds(df: pd.DataFrame, roles: dict[str, list[str]], findings: list[Finding]) -> None:
     for col in numeric_columns(df):
         nums = get_numeric_series(df, col)
         if nums.empty:
             continue
         name = str(col).lower()
-        if re.search(r"pvalue|p_value|p-value|padj|fdr|qvalue|q_value", name):
+        if is_raw_pvalue_column(name):
             bad = ((nums < 0) | (nums > 1)).sum()
             if bad:
                 add_finding(findings, "P-value bounds", "scientific_bounds", "red", "high", 50, f"Column {col} has {bad} values outside [0, 1].", {"column": col, "bad_count": int(bad)}, column=col)
