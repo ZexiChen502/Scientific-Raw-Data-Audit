@@ -319,15 +319,114 @@ def sample_rows(df: pd.DataFrame, config: AuditConfig) -> pd.DataFrame:
     return df
 
 
+def trim_empty_edges(df: pd.DataFrame) -> pd.DataFrame:
+    cleaned = df.dropna(axis=0, how="all").dropna(axis=1, how="all")
+    return cleaned.reset_index(drop=True)
+
+
+def contiguous_true_runs(mask: list[bool]) -> list[tuple[int, int]]:
+    runs: list[tuple[int, int]] = []
+    start: int | None = None
+    for index, value in enumerate(mask):
+        if value and start is None:
+            start = index
+        elif not value and start is not None:
+            runs.append((start, index))
+            start = None
+    if start is not None:
+        runs.append((start, len(mask)))
+    return runs
+
+
+def excel_column_group_starts(row_block: pd.DataFrame) -> list[int]:
+    starts: list[int] = []
+    for _, row in row_block.head(4).iterrows():
+        for idx, value in enumerate(row.tolist()):
+            if isinstance(value, str) and re.search(r"concentrat|dose", value, re.I):
+                starts.append(idx)
+    starts = sorted(set(starts))
+    if len(starts) >= 2:
+        return starts
+    return []
+
+
+def split_excel_layout_blocks(df: pd.DataFrame) -> list[pd.DataFrame]:
+    cleaned = trim_empty_edges(df)
+    if cleaned.empty:
+        return []
+
+    row_mask = cleaned.notna().any(axis=1).tolist()
+    row_runs = contiguous_true_runs(row_mask)
+    blocks: list[pd.DataFrame] = []
+
+    for row_start, row_end in row_runs:
+        row_block = cleaned.iloc[row_start:row_end, :]
+        col_mask = row_block.notna().any(axis=0).tolist()
+        for col_start, col_end in contiguous_true_runs(col_mask):
+            block = trim_empty_edges(row_block.iloc[:, col_start:col_end])
+            if block.shape[0] < 2 or block.shape[1] < 2:
+                continue
+            starts = excel_column_group_starts(block)
+            if starts:
+                starts_with_end = starts + [block.shape[1]]
+                for idx, start_col in enumerate(starts):
+                    end_col = starts_with_end[idx + 1]
+                    sub = trim_empty_edges(block.iloc[:, start_col:end_col])
+                    if sub.shape[0] >= 2 and sub.shape[1] >= 2:
+                        blocks.append(sub)
+            else:
+                blocks.append(block)
+
+    return blocks or [cleaned]
+
+
+def normalize_excel_block(block: pd.DataFrame) -> pd.DataFrame:
+    block = trim_empty_edges(block)
+    if block.empty:
+        return block
+    header_scores = []
+    for idx in range(min(3, len(block))):
+        row = block.iloc[idx]
+        text_count = sum(isinstance(value, str) and bool(value.strip()) for value in row.dropna())
+        non_null = row.notna().sum()
+        header_scores.append((text_count, non_null, idx))
+    header_idx = max(header_scores, key=lambda x: (x[0], x[1]))[2] if header_scores else 0
+    if header_idx > 0 or any(isinstance(value, str) for value in block.iloc[header_idx].dropna()):
+        columns = []
+        seen: Counter[str] = Counter()
+        for col_idx, value in enumerate(block.iloc[header_idx].tolist()):
+            base_name = str(value).strip() if pd.notna(value) and str(value).strip() else f"column_{col_idx + 1}"
+            seen[base_name] += 1
+            name = base_name if seen[base_name] == 1 else f"{base_name}_{seen[base_name]}"
+            columns.append(name)
+        data = block.iloc[header_idx + 1:].reset_index(drop=True)
+        data.columns = columns
+        return trim_empty_edges(data)
+    block = block.reset_index(drop=True)
+    block.columns = [f"column_{i + 1}" for i in range(block.shape[1])]
+    return block
+
+
 def load_excel(path: Path, config: AuditConfig) -> list[LoadedTable]:
     if openpyxl is None and path.suffix.lower() == ".xlsx":
         return [LoadedTable(path, file_format(path), "workbook", None, "metadata_only", ["Install openpyxl to audit .xlsx files."])]
     try:
-        sheets = pd.read_excel(path, sheet_name=None, nrows=config.max_rows)
-        return [
-            LoadedTable(path, file_format(path), str(name), cap_columns(df, config), "loaded", [], len(df), len(df.columns))
-            for name, df in sheets.items()
-        ]
+        sheets = pd.read_excel(path, sheet_name=None, nrows=config.max_rows, header=None)
+        tables: list[LoadedTable] = []
+        for sheet_name, sheet_df in sheets.items():
+            blocks = split_excel_layout_blocks(sheet_df)
+            if len(blocks) <= 1:
+                df = normalize_excel_block(blocks[0] if blocks else sheet_df)
+                df = cap_columns(df, config)
+                tables.append(LoadedTable(path, file_format(path), str(sheet_name), df, "loaded", ["Excel sheet was trimmed before audit."], len(df), len(df.columns)))
+            else:
+                for block_index, block in enumerate(blocks, start=1):
+                    df = normalize_excel_block(block)
+                    if df.empty:
+                        continue
+                    df = cap_columns(df, config)
+                    tables.append(LoadedTable(path, file_format(path), f"{sheet_name} / block {block_index}", df, "loaded", ["Excel layout sheet was split into contiguous data blocks before audit."], len(df), len(df.columns)))
+        return tables or [LoadedTable(path, file_format(path), "workbook", None, "metadata_only", ["No non-empty Excel data blocks found."])]
     except Exception as exc:
         return [LoadedTable(path, file_format(path), "workbook", None, "failed", [str(exc)])]
 
